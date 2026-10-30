@@ -1,0 +1,22 @@
+PORTAL BROWSER VERIFICATION
+Build: portal-20261030-3
+
+Verified locally:
+- server.js parses with Node.js.
+- public/sw.js parses with Node.js.
+- inline JavaScript in public/index.html parses.
+- required project files are present.
+- HTML and service worker use the matching build identifier.
+- transport selection uses the expected CurlTransport websocket option and Epoxy wisp option.
+- deprecated wisp-server-node has been replaced with @mercuryworkshop/wisp-js/server.
+- Wisp WebSocket upgrades are routed only for /wisp/.
+- service-worker proxy failures now include the underlying error text instead of a generic message.
+- Render health endpoint is configured at /healthz.
+
+Not verified locally:
+- npm dependency installation.
+- actual Express/Wisp server start with installed packages.
+- live WebSocket handshake to Wisp.
+- successful external website navigation through Scramjet.
+
+Reason: package host DNS/network access is unavailable in this environment, so npm dependencies could not be installed. Do not treat static checks as a successful end-to-end proxy test.

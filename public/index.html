@@ -1,0 +1,407 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Portal</title>
+<style>
+*{box-sizing:border-box;margin:0}
+html,body{height:100%}
+body{font-family:system-ui,-apple-system,Segoe UI,sans-serif;color:#e8eaf6;background:#0d0f1f;display:flex;flex-direction:column;overflow:hidden}
+#tabs{display:flex;gap:4px;align-items:flex-end;padding:8px 8px 0;background:#090b18;overflow-x:auto;flex:none}
+.tab{display:flex;align-items:center;gap:8px;max-width:210px;min-width:110px;padding:8px 10px 8px 14px;border-radius:10px 10px 0 0;background:#12152b;color:#9aa3d6;font-size:13px;cursor:pointer;white-space:nowrap}
+.tab.on{background:#1b1f3d;color:#fff}
+.tab span{overflow:hidden;text-overflow:ellipsis;flex:1}
+.tab b{font-weight:400;width:18px;height:18px;line-height:18px;text-align:center;border-radius:50%}
+.tab b:hover{background:#ffffff22}
+#plus{border:0;background:none;color:#9aa3d6;font-size:20px;width:34px;height:32px;cursor:pointer;border-radius:8px}
+#plus:hover{background:#171a33}
+#bar{display:flex;gap:8px;align-items:center;padding:8px 10px;background:#1b1f3d;flex:none}
+.nav{width:34px;height:34px;border:0;border-radius:50%;background:none;color:#cdd3ff;font-size:16px;cursor:pointer;flex:none}
+.nav:hover{background:#2b305a}
+form{display:flex;background:#0d0f1f;border:1px solid #2d3260;border-radius:999px;padding:4px}
+form:focus-within{border-color:#8ab4ff}
+#bf{flex:1}
+input{flex:1;min-width:0;background:none;border:0;outline:0;color:inherit;font-size:.95rem;padding:8px 16px}
+.go{border:0;border-radius:999px;padding:0 22px;font-weight:700;cursor:pointer;color:#0d0f1f;background:linear-gradient(90deg,#8ab4ff,#c58bff)}
+#views{flex:1;position:relative;min-height:0}
+.view{position:absolute;inset:0;display:none}
+.view.on{display:block}
+.view iframe{width:100%;height:100%;border:0;background:#fff;display:none}
+.view.nav-on iframe{display:block}
+.view.nav-on .home{display:none}
+.home{height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:24px;background:radial-gradient(circle at 20% 20%,#2b2f77 0,#0d0f1f 55%)}
+h1{font-size:clamp(2.2rem,6vw,3.6rem);font-weight:800;letter-spacing:-1px;background:linear-gradient(90deg,#8ab4ff,#c58bff);-webkit-background-clip:text;background-clip:text;color:transparent}
+.sub{margin:8px 0 26px;color:#9aa3d6}
+.hf{width:min(640px,100%);box-shadow:0 10px 40px #0008;background:#171a33}
+.hf input{font-size:1.05rem;padding:12px 20px}
+.quick{display:flex;flex-wrap:wrap;gap:10px;justify-content:center;margin-top:26px;max-width:640px}
+.quick a{padding:9px 18px;border-radius:999px;background:#171a33;border:1px solid #2d3260;color:#cdd3ff;text-decoration:none;font-size:.95rem}
+.quick a:hover{border-color:#8ab4ff}
+#msg{position:fixed;left:50%;bottom:20px;transform:translateX(-50%);background:#3a1620;color:#ffb4b4;border:1px solid #7a2c3d;padding:10px 18px;border-radius:12px;display:none;max-width:90vw;z-index:9}
+</style>
+</head>
+<body>
+<div id="tabs"><button id="plus" title="New tab">+</button></div>
+<div id="bar">
+  <button class="nav" id="back" title="Back">&#8592;</button>
+  <button class="nav" id="fwd" title="Forward">&#8594;</button>
+  <button class="nav" id="reload" title="Reload">&#8635;</button>
+  <button class="nav" id="home-btn" title="Home">&#8962;</button>
+  <form id="bf"><input id="bq" placeholder="Search or enter a URL" autocomplete="off"><button class="go">Go</button></form>
+</div>
+<div id="views"></div>
+<div id="msg"></div>
+
+<template id="tpl">
+  <div class="view">
+    <div class="home">
+      <h1>Portal</h1>
+      <p class="sub">Search anything or enter a link.</p>
+      <form class="hf"><input placeholder="Search or enter a URL" autocomplete="off"><button class="go">Go</button></form>
+      <div class="quick">
+        <a href="#" data-u="https://www.youtube.com">YouTube</a>
+        <a href="#" data-u="https://www.reddit.com">Reddit</a>
+        <a href="#" data-u="https://www.wikipedia.org">Wikipedia</a>
+        <a href="#" data-u="https://duckduckgo.com">Search</a>
+      </div>
+    </div>
+    <iframe></iframe>
+  </div>
+</template>
+
+<script src="/baremux/index.js?v=portal-20261030-3"></script>
+<script src="/scram/scramjet.all.js?v=portal-20261030-3"></script>
+<script>
+var $ = function (id) { return document.getElementById(id); };
+var ready = null, scramjet = null, connection = null, tabs = [], active = null;
+var BUILD_ID = 'portal-20261030-3';
+
+function toUrl(value) {
+  var text = String(value || '').trim();
+  if (!text) return '';
+
+  // Preserve fully-qualified URLs, including non-http schemes accepted by URL.
+  if (/^[a-z][a-z0-9+.-]*:\/\//i.test(text)) {
+    try { return new URL(text).href; } catch (e) {}
+  }
+
+  // Treat domain names (including ports, paths, queries, and fragments) as URLs.
+  if (/^(localhost|(?:[a-z0-9-]+\.)+[a-z]{2,})(?::\d{1,5})?(?:[/?#][^\s]*)?$/i.test(text)) {
+    return 'https://' + text;
+  }
+
+  return 'https://duckduckgo.com/?q=' + encodeURIComponent(text);
+}
+
+function say(message) {
+  var element = $('msg');
+  element.textContent = message;
+  element.style.display = 'block';
+  clearTimeout(say.timer);
+  say.timer = setTimeout(function () { element.style.display = 'none'; }, 10000);
+}
+
+function makeScramjetController(Controller) {
+  var files = {
+    wasm: '/scram/scramjet.wasm.wasm',
+    all: '/scram/scramjet.all.js',
+    sync: '/scram/scramjet.sync.js'
+  };
+  return new Controller({
+    prefix: '/~/sj/',
+    files: files
+  });
+}
+
+function deleteIndexedDB(name) {
+  return new Promise(function (resolve, reject) {
+    var request;
+    try {
+      request = indexedDB.deleteDatabase(name);
+    } catch (error) {
+      reject(error);
+      return;
+    }
+    request.onsuccess = function () { resolve(); };
+    request.onerror = function () {
+      reject(request.error || new Error('Could not reset IndexedDB database ' + name));
+    };
+    request.onblocked = function () {
+      reject(new Error('The Scramjet database is still open in another tab. Close every Portal tab and reload this page.'));
+    };
+  });
+}
+
+async function findScramjetDatabases(controller) {
+  var names = new Set();
+
+  // Scramjet exposes this helper in its controller API. Use it only to discover
+  // the exact database name; close the handle before deleting/recreating it.
+  if (controller && typeof controller.openIDB === 'function') {
+    try {
+      var db = await controller.openIDB();
+      if (db && db.name) names.add(db.name);
+      if (db && typeof db.close === 'function') db.close();
+    } catch (error) {
+      console.warn('Could not inspect the Scramjet database directly:', error);
+    }
+  }
+
+  // Chromium supports databases(); only remove databases explicitly named for Scramjet.
+  if (indexedDB && typeof indexedDB.databases === 'function') {
+    var databases = await indexedDB.databases();
+    databases.forEach(function (database) {
+      if (database.name && /scramjet/i.test(database.name)) names.add(database.name);
+    });
+  }
+
+  return Array.from(names);
+}
+
+async function initializeScramjet(Controller) {
+  scramjet = makeScramjetController(Controller);
+  try {
+    await scramjet.init();
+  } catch (error) {
+    var message = String(error && error.message ? error.message : error);
+    var isMissingStore = /object store|object stores|NotFoundError/i.test(message);
+    if (!isMissingStore) throw error;
+
+    console.warn('Scramjet IndexedDB schema mismatch. Attempting a targeted repair.', error);
+    var databaseNames = await findScramjetDatabases(scramjet);
+    if (!databaseNames.length) {
+      throw new Error(message + ' (Could not safely identify the Scramjet database to repair. Close other Portal tabs and reload.)');
+    }
+
+    await Promise.all(databaseNames.map(deleteIndexedDB));
+    scramjet = makeScramjetController(Controller);
+    await scramjet.init();
+  }
+}
+
+async function checkAsset(path) {
+  var response;
+  try {
+    response = await fetch(path, { method: 'HEAD', cache: 'no-store' });
+  } catch (error) {
+    throw new Error('Could not reach required proxy file ' + path + ': ' + error.message);
+  }
+  if (!response.ok) throw new Error('Required proxy file is missing: ' + path + ' (HTTP ' + response.status + ')');
+}
+
+async function waitForServiceWorker(registration) {
+  await navigator.serviceWorker.ready;
+  var expectedMarker = 'build=' + BUILD_ID;
+  function isCurrentBuild(worker) {
+    return !!worker && worker.scriptURL.indexOf(expectedMarker) !== -1;
+  }
+  if (isCurrentBuild(navigator.serviceWorker.controller)) return;
+
+  // The page may still be controlled by the previous deployment's worker.
+  // Wait for the newly-versioned worker to take control before navigating.
+  await new Promise(function (resolve, reject) {
+    var finished = false;
+    function cleanup() {
+      clearTimeout(timer);
+      navigator.serviceWorker.removeEventListener('controllerchange', changed);
+    }
+    function changed() {
+      if (isCurrentBuild(navigator.serviceWorker.controller)) {
+        if (finished) return;
+        finished = true;
+        cleanup();
+        resolve();
+      }
+    }
+    var timer = setTimeout(function () {
+      if (finished) return;
+      finished = true;
+      cleanup();
+      reject(new Error('The updated service worker did not take control. Close other Portal tabs, then reload.'));
+    }, 12000);
+    navigator.serviceWorker.addEventListener('controllerchange', changed);
+    changed();
+  });
+}
+
+async function setup() {
+  if (!('serviceWorker' in navigator)) {
+    throw new Error('Service workers are unavailable. Open Portal over HTTPS in a supported browser.');
+  }
+  if (!window.BareMux || typeof window.BareMux.BareMuxConnection !== 'function') {
+    throw new Error('BareMux did not load. Check that /baremux/index.js is available.');
+  }
+  if (typeof window.$scramjetLoadController !== 'function') {
+    throw new Error('Scramjet did not load. Check that /scram/scramjet.all.js is available.');
+  }
+
+  await Promise.all([
+    checkAsset('/baremux/worker.js'),
+    checkAsset('/scram/scramjet.all.js'),
+    checkAsset('/scram/scramjet.wasm.wasm'),
+    checkAsset('/scram/scramjet.sync.js')
+  ]);
+
+  var wisp = (location.protocol === 'https:' ? 'wss:' : 'ws:') + '//' + location.host + '/wisp/';
+  var requestedTransport = new URLSearchParams(location.search).get('transport');
+  var useCurl = requestedTransport !== 'epoxy';
+  if (useCurl) {
+    try {
+      await checkAsset('/libcurl/index.mjs');
+    } catch (error) {
+      useCurl = false;
+      console.warn('libcurl transport is unavailable; trying Epoxy instead.', error);
+    }
+  }
+  if (!useCurl) await checkAsset('/epoxy/index.mjs');
+
+  var transportPath = useCurl ? '/libcurl/index.mjs' : '/epoxy/index.mjs';
+  connection = new BareMux.BareMuxConnection('/baremux/worker.js');
+  // Configure BareMux before waiting for the service worker. BareMux v2 documents
+  // this order specifically to avoid transport/service-worker races.
+  var transportOptions = useCurl ? [{ websocket: wisp }] : [{ wisp: wisp }];
+  await connection.setTransport(transportPath, transportOptions);
+
+  var sj = window.$scramjetLoadController();
+  var Controller = sj.ScramjetController;
+  if (typeof Controller !== 'function') throw new Error('ScramjetController was not exported by the Scramjet bundle.');
+
+  // Start controller initialization before SW registration, as in the official
+  // Scramjet setup example; await both before opening a proxied page.
+  var initPromise = initializeScramjet(Controller).then(function () { return null; }, function (error) { return error; });
+  var registration;
+  try {
+    registration = await navigator.serviceWorker.register('/sw.js?build=' + BUILD_ID, {
+      scope: '/',
+      updateViaCache: 'none'
+    });
+  } catch (error) {
+    throw new Error('Could not register /sw.js: ' + error.message);
+  }
+
+  var initError = await initPromise;
+  if (initError) throw initError;
+  await waitForServiceWorker(registration);
+}
+
+function select(tab) {
+  active = tab;
+  tabs.forEach(function (item) {
+    item.view.classList.toggle('on', item === tab);
+    item.el.classList.toggle('on', item === tab);
+  });
+  $('bq').value = tab.url || '';
+}
+
+function newTab() {
+  var tab = { url: '' };
+  tab.view = $('tpl').content.firstElementChild.cloneNode(true);
+  tab.frame = tab.view.querySelector('iframe');
+  tab.el = document.createElement('div');
+  tab.el.className = 'tab';
+  tab.el.innerHTML = '<span>New Tab</span><b>&times;</b>';
+  tab.el.onclick = function () { select(tab); };
+  tab.el.querySelector('b').onclick = function (event) {
+    event.stopPropagation();
+    closeTab(tab);
+  };
+  $('tabs').insertBefore(tab.el, $('plus'));
+  $('views').appendChild(tab.view);
+
+  var homeInput = tab.view.querySelector('.hf input');
+  tab.view.querySelector('.hf').onsubmit = function (event) {
+    event.preventDefault();
+    go(homeInput.value, tab);
+  };
+  tab.view.querySelectorAll('.quick a').forEach(function (anchor) {
+    anchor.onclick = function (event) {
+      event.preventDefault();
+      go(anchor.dataset.u, tab);
+    };
+  });
+  tab.frame.onload = function () {
+    try {
+      var href = tab.frame.contentWindow.location.href;
+      if (scramjet && typeof scramjet.decodeUrl === 'function' && href.indexOf('/~/sj/') !== -1) {
+        tab.url = scramjet.decodeUrl(href);
+        if (active === tab) $('bq').value = tab.url;
+      }
+      var title = tab.frame.contentDocument.title;
+      if (title) tab.el.firstChild.textContent = title;
+    } catch (error) {
+      // Cross-origin navigations are expected to be inaccessible to the parent.
+    }
+  };
+  tabs.push(tab);
+  select(tab);
+  homeInput.focus();
+}
+
+function closeTab(tab) {
+  var index = tabs.indexOf(tab);
+  if (index === -1) return;
+  tabs.splice(index, 1);
+  tab.el.remove();
+  tab.view.remove();
+  if (!tabs.length) newTab();
+  else if (active === tab) select(tabs[Math.max(0, index - 1)]);
+}
+
+async function go(value, tab) {
+  tab = tab || active;
+  if (!tab || !value || !String(value).trim()) return;
+
+  try {
+    if (!ready) ready = setup();
+    await ready;
+  } catch (error) {
+    ready = null;
+    console.error('Portal proxy startup failed:', error);
+    say('Could not start the proxy: ' + (error && error.message ? error.message : error));
+    return;
+  }
+
+  var url = toUrl(value);
+  if (!url) return;
+  tab.url = url;
+  tab.view.classList.add('nav-on');
+  tab.el.firstChild.textContent = url;
+  if (active === tab) $('bq').value = url;
+  try {
+    tab.frame.src = scramjet.encodeUrl(url);
+  } catch (error) {
+    console.error('Could not encode proxied URL:', error);
+    say('Could not open that address: ' + error.message);
+  }
+}
+
+$('plus').onclick = newTab;
+$('bf').onsubmit = function (event) {
+  event.preventDefault();
+  go($('bq').value);
+};
+$('back').onclick = function () {
+  if (active && active.frame) try { active.frame.contentWindow.history.back(); } catch (error) {}
+};
+$('fwd').onclick = function () {
+  if (active && active.frame) try { active.frame.contentWindow.history.forward(); } catch (error) {}
+};
+$('reload').onclick = function () {
+  if (active && active.frame) try { active.frame.contentWindow.location.reload(); } catch (error) {}
+};
+$('home-btn').onclick = function () {
+  if (!active) return;
+  active.frame.src = 'about:blank';
+  active.view.classList.remove('nav-on');
+  active.url = '';
+  active.el.firstChild.textContent = 'New Tab';
+  $('bq').value = '';
+};
+window.addEventListener('error', function (event) {
+  console.error('Portal page error:', event.error || event.message);
+});
+newTab();
+</script>
+</body>
+</html>
